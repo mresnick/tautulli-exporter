@@ -8,9 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -24,50 +22,6 @@ const (
 	namespace = "tautulli"
 	userAgent = "tautulli-prometheus-exporter"
 )
-
-var (
-	streamLabelNames    = []string{"stream"}
-	bandwidthLabelNames = []string{"bandwidth"}
-)
-
-func newStreamMetric(metricName string, docString string, constLabels prometheus.Labels) *prometheus.GaugeVec {
-	return prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace:   namespace,
-			Name:        "stream_" + metricName,
-			Help:        docString,
-			ConstLabels: constLabels,
-		},
-		streamLabelNames,
-	)
-}
-
-func newBandwidthMetric(metricName string, docString string, constLabels prometheus.Labels) *prometheus.GaugeVec {
-	return prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace:   namespace,
-			Name:        "bandwidth_" + metricName,
-			Help:        docString,
-			ConstLabels: constLabels,
-		},
-		bandwidthLabelNames,
-	)
-}
-
-type metrics map[int]*prometheus.GaugeVec
-
-func (m metrics) String() string {
-	keys := make([]int, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	s := make([]string, len(keys))
-	for i, k := range keys {
-		s[i] = strconv.Itoa(k)
-	}
-	return strings.Join(s, ",")
-}
 
 type config struct {
 	TautulliApiKey    string        `env:"TAUTULLI_API_KEY"`
@@ -84,12 +38,14 @@ type Exporter struct {
 
 	up, streamTotal, streamTranscode, streamDirectPlay, streamDirectStream, bandwidthTotal, bandwidthLan, bandwidthWan prometheus.Gauge
 	totalScrapes                                                                                                       prometheus.Counter
-	streamMetrics, bandwidthMetrics                                                                                    map[string]*prometheus.GaugeVec
+	streamDesc                                                                                                         *prometheus.Desc
 }
 
 var (
 	version string
 )
+
+var streamsLabel = []string{"username", "library", "player", "device", "location", "state"}
 
 func NewExporter(uri string, sslVerify bool, timeout time.Duration) (*Exporter, error) {
 	var fetch = fetchHTTP(uri, sslVerify, timeout)
@@ -107,6 +63,7 @@ func NewExporter(uri string, sslVerify bool, timeout time.Duration) (*Exporter, 
 			Name:      "exporter_total_scrapes",
 			Help:      "Current total Tautulli scrapes",
 		}),
+
 		streamTotal: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "stream_count",
@@ -142,6 +99,12 @@ func NewExporter(uri string, sslVerify bool, timeout time.Duration) (*Exporter, 
 			Name:      "bandwidth_wan",
 			Help:      "WAN bandwidth utilized.",
 		}),
+		streamDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "", "stream"),
+			"Individual Streams",
+			streamsLabel,
+			nil,
+		),
 	}, nil
 }
 
@@ -155,6 +118,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.bandwidthTotal.Desc()
 	ch <- e.bandwidthLan.Desc()
 	ch <- e.bandwidthWan.Desc()
+	ch <- e.streamDesc
 }
 
 // Implements prometheus.Collector.
@@ -164,7 +128,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	defer e.mutex.Unlock()
 
 	e.resetMetrics()
-	e.scrape()
+	e.scrape(ch)
 
 	ch <- e.up
 	ch <- e.totalScrapes
@@ -175,6 +139,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	ch <- e.bandwidthTotal
 	ch <- e.bandwidthLan
 	ch <- e.bandwidthWan
+
 }
 
 // Fetches stats from Tautulli for later processing
@@ -200,7 +165,7 @@ func fetchHTTP(uri string, sslVerify bool, timeout time.Duration) func() (io.Rea
 }
 
 // Scrapes stats using the previous fetch
-func (e *Exporter) scrape() {
+func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	e.totalScrapes.Inc()
 
 	body, err := e.fetch()
@@ -228,6 +193,19 @@ func (e *Exporter) scrape() {
 	e.bandwidthTotal.Set(data.Get("total_bandwidth").Float())
 	e.bandwidthLan.Set(data.Get("lan_bandwidth").Float())
 	e.bandwidthWan.Set(data.Get("wan_bandwidth").Float())
+
+	streams := data.Get("sessions").Array()
+	//var streamsLabel = []string{"username", "library", "player", "device", "location"}
+	for _, stream := range streams {
+		ch <- prometheus.MustNewConstMetric(e.streamDesc, prometheus.GaugeValue, 1,
+			stream.Get("user").Str,
+			stream.Get("library_name").Str,
+			stream.Get("player").Str,
+			stream.Get("device").Str,
+			stream.Get("location").Str,
+			stream.Get("state").Str,
+		)
+	}
 
 }
 
