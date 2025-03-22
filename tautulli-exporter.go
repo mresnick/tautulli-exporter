@@ -204,6 +204,18 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 			stream.Get("device").Str,
 			stream.Get("location").Str,
 			stream.Get("state").Str,
+			stream.Get("progress_percent").Str,
+			stream.Get("grandparent_title").Str,
+			stream.Get("title").Str,
+			stream.Get("bitrate").Str,
+			stream.Get("video_resolution").Str,
+			stream.Get("video_full_resolution").Str,
+			stream.Get("quality_profile").Str,
+			stream.Get("video_codec").Str,
+			stream.Get("audio_codec").Str,
+	                stream.Get("ip_address").Str,
+			stream.Get("product").Str,
+			stream.Get("product_version").Str
 		)
 	}
 
