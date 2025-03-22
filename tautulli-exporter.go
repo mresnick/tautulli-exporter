@@ -45,9 +45,9 @@ var (
 	version string
 )
 
-var streamsLabel = []string{"user", "library_name", "player", "device", "location", "state", "progress_percent", 
-	"full_title", "bitrate", "video_resolution", "video_full_resolution", "quality_profile", "video_codec", "audio_codec", 
-	"ip_address", "product", "product_version", "stream_video_codec", "stream_audio_codec", "transcode_decision", "media_type"}
+var streamsLabel = []string{"user", "library_name", "player", "device", "location", "state", "progress_percent",
+	"full_title", "bitrate", "video_resolution", "video_full_resolution", "quality_profile", "video_codec", "audio_codec",
+	"ip_address", "city", "country", "latitude", "longitude", "product", "product_version", "stream_video_codec", "stream_audio_codec", "transcode_decision", "media_type"}
 
 func NewExporter(uri string, sslVerify bool, timeout time.Duration) (*Exporter, error) {
 	var fetch = fetchHTTP(uri, sslVerify, timeout)
@@ -166,6 +166,41 @@ func fetchHTTP(uri string, sslVerify bool, timeout time.Duration) func() (io.Rea
 	}
 }
 
+// Fetches tautulli's geolocation info for given IP address
+func getGeoIPLookup(ipAddress string) gjson.Result {
+	// Clean up so we're not parsing config twice
+	cfg := config{}
+	err := env.Parse(&cfg)
+	if err != nil {
+		fmt.Printf("%+v\n", err)
+	}
+
+	u, err := url.Parse(cfg.TautulliScrapeUri + "/api/v2")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	q := u.Query()
+	q.Set("apikey", cfg.TautulliApiKey)
+	q.Set("cmd", "get_geoip_lookup")
+	q.Set("ip_address", ipAddress)
+	u.RawQuery = q.Encode()
+
+	reader, err := fetchHTTP(u.String(), cfg.TautulliSslVerify, cfg.TautulliTimeout)()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	resp, err := io.ReadAll(reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	result := gjson.Get(string(resp), "response.data")
+
+	return result
+}
+
 // Scrapes stats using the previous fetch
 func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	e.totalScrapes.Inc()
@@ -173,7 +208,7 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	body, err := e.fetch()
 	if err != nil {
 		e.up.Set(0)
-		fmt.Errorf("Can't scrape Tautulli: %v", err)
+		//fmt.Errorf("Can't scrape Tautulli: %v", err)
 		return
 	}
 	defer body.Close()
@@ -197,8 +232,10 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	e.bandwidthWan.Set(data.Get("wan_bandwidth").Float())
 
 	streams := data.Get("sessions").Array()
-	//var streamsLabel = []string{"username", "library", "player", "device", "location"}
 	for _, stream := range streams {
+
+		var geolocation = getGeoIPLookup(stream.Get("ip_address_public").Str)
+
 		ch <- prometheus.MustNewConstMetric(e.streamDesc, prometheus.GaugeValue, 1,
 			stream.Get("user").Str,
 			stream.Get("library_name").Str,
@@ -214,13 +251,17 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 			stream.Get("quality_profile").Str,
 			stream.Get("video_codec").Str,
 			stream.Get("audio_codec").Str,
-	                stream.Get("ip_address").Str,
+			stream.Get("ip_address_public").Str,
+			geolocation.Get("city").Str,
+			geolocation.Get("country").Str,
+			strconv.FormatFloat(geolocation.Get("latitude").Num, 'f', -1, 64),
+			strconv.FormatFloat(geolocation.Get("longitude").Num, 'f', -1, 64),
 			stream.Get("product").Str,
 			stream.Get("product_version").Str,
-                        stream.Get("stream_video_codec").Str,
-                        stream.Get("stream_audio_codec").Str,
-                        stream.Get("transcode_decision").Str,
-                        stream.Get("media_type").Str,
+			stream.Get("stream_video_codec").Str,
+			stream.Get("stream_audio_codec").Str,
+			stream.Get("transcode_decision").Str,
+			stream.Get("media_type").Str,
 		)
 	}
 

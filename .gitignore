@@ -2,3 +2,5 @@
 .DS_Store
 .idea
 *.tar.gz
+.vscode/launch.json
+.vscode/settings.json
