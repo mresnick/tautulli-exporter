@@ -45,7 +45,9 @@ var (
 	version string
 )
 
-var streamsLabel = []string{"username", "library", "player", "device", "location", "state"}
+var streamsLabel = []string{"user", "library_name", "player", "device", "location", "state", "progress_percent", 
+	"full_title", "bitrate", "video_resolution", "video_full_resolution", "quality_profile", "video_codec", "audio_codec", 
+	"ip_address", "product", "product_version", "stream_video_codec", "stream_audio_codec", "transcode_decision", "media_type"}
 
 func NewExporter(uri string, sslVerify bool, timeout time.Duration) (*Exporter, error) {
 	var fetch = fetchHTTP(uri, sslVerify, timeout)
@@ -204,6 +206,21 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 			stream.Get("device").Str,
 			stream.Get("location").Str,
 			stream.Get("state").Str,
+			stream.Get("progress_percent").Str,
+			stream.Get("full_title").Str,
+			stream.Get("bitrate").Str,
+			stream.Get("video_resolution").Str,
+			stream.Get("video_full_resolution").Str,
+			stream.Get("quality_profile").Str,
+			stream.Get("video_codec").Str,
+			stream.Get("audio_codec").Str,
+	                stream.Get("ip_address").Str,
+			stream.Get("product").Str,
+			stream.Get("product_version").Str,
+                        stream.Get("stream_video_codec").Str,
+                        stream.Get("stream_audio_codec").Str,
+                        stream.Get("transcode_decision").Str,
+                        stream.Get("media_type").Str,
 		)
 	}
 
