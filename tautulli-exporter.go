@@ -178,6 +178,7 @@ func getGeoIPLookup(ipAddress string) gjson.Result {
 	u, err := url.Parse(cfg.TautulliScrapeUri + "/api/v2")
 	if err != nil {
 		log.Fatal(err)
+		return gjson.Result{}
 	}
 
 	q := u.Query()
@@ -189,11 +190,13 @@ func getGeoIPLookup(ipAddress string) gjson.Result {
 	reader, err := fetchHTTP(u.String(), cfg.TautulliSslVerify, cfg.TautulliTimeout)()
 	if err != nil {
 		log.Fatal(err)
+		return gjson.Result{}
 	}
 
 	resp, err := io.ReadAll(reader)
 	if err != nil {
 		log.Fatal(err)
+		return gjson.Result{}
 	}
 
 	result := gjson.Get(string(resp), "response.data")
